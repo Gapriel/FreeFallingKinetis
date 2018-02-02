@@ -17,8 +17,8 @@ static i2c_master_transfer_t masterXfer;
 static volatile bool g_MasterCompletionFlag = false;
 static i2c_master_handle_t g_m_handle;
 static const uint8_t gFrecuency = 8;    //period corresponding to 4Hz
-static const uint8_t gKinetisFalling = TRUE; //variable used to know if the Kinetis is falling
-static int16_t accelerometer[3];        //where the accelerometer will receive its readings
+static const uint8_t gKinetisFalling = FALSE; //variable used to know if the Kinetis is falling
+static int16_t accelerometer[3]; //where the accelerometer will receive its readings
 
 void PIT0_IRQHandler() {
     PIT_ClearStatusFlags(PIT, kPIT_Chnl_0, kPIT_TimerFlag); //pit0 interrupt flag cleared
@@ -140,9 +140,6 @@ void freeFall_modulesInit() {
 
 void freeFall_fallDetection() {
     freeFall_readAccelerometer();
-    if (FALSE == gKinetisFalling)   //if the Kinetis isn't Falling
-    {
-        GPIO_SetPinsOutput(GPIOB, 1 << 22);
-    }
+
 }
 

@@ -14,10 +14,11 @@
 #include "DataTypeDefinitions.h"
 
 static i2c_master_transfer_t masterXfer;
-static uint8_t data_buffer = 0x01;
 static volatile bool g_MasterCompletionFlag = false;
-static const uint8_t gFrecuency = 4;    //period corresponding to 4Hz
-static const uint8_t gKinetisFalling = FALSE;   //variable used to know if the Kinetis is falling
+static i2c_master_handle_t g_m_handle;
+static const uint8_t gFrecuency = 8;    //period corresponding to 4Hz
+static const uint8_t gKinetisFalling = TRUE; //variable used to know if the Kinetis is falling
+static int16_t accelerometer[3];        //where the accelerometer will receive its readings
 
 void PIT0_IRQHandler() {
     PIT_ClearStatusFlags(PIT, kPIT_Chnl_0, kPIT_TimerFlag); //pit0 interrupt flag cleared
@@ -55,7 +56,6 @@ static void freeFall_I2Cinit() {
     I2C_MasterInit(I2C0, &masterConfig, CLOCK_GetFreq(kCLOCK_BusClk));
 
     //I2C_0 master handler creation
-    i2c_master_handle_t g_m_handle;
     I2C_MasterTransferCreateHandle(I2C0, &g_m_handle, i2c_master_callback,
                                    NULL);
 }
@@ -68,7 +68,7 @@ static void freeFall_pitInit() {
     pit_config_t config_pit;
     PIT_GetDefaultConfig(&config_pit);
     PIT_Init(PIT, &config_pit);
-    PIT_SetTimerPeriod(PIT, kPIT_Chnl_0, CLOCK_GetBusClkFreq()/gFrecuency); //pit timer set to interrupt every second
+    PIT_SetTimerPeriod(PIT, kPIT_Chnl_0, CLOCK_GetBusClkFreq() / gFrecuency); //pit timer set to interrupt every second
 
     //PIT_0 module interrupts enabling
     NVIC_EnableIRQ(PIT0_IRQn);      //PIT 0 interrupt enabled
@@ -93,12 +93,56 @@ static void freeFall_gpioLedsInit() {
     GPIO_PinInit(GPIOB, 22, &led_config_gpio);
 }
 
+static void freeFall_IMUinit() {
+    uint8_t data_buffer = 0x01;
+    masterXfer.slaveAddress = 0x1D;
+    masterXfer.direction = kI2C_Write;
+    masterXfer.subaddress = 0x2A;
+    masterXfer.subaddressSize = 1;
+    masterXfer.data = &data_buffer;
+    masterXfer.dataSize = 1;
+    masterXfer.flags = kI2C_TransferDefaultFlag;
+
+    I2C_MasterTransferNonBlocking(I2C0, &g_m_handle, &masterXfer);
+    while (!g_MasterCompletionFlag)
+    {
+    }
+    g_MasterCompletionFlag = false;
+}
+
+static void freeFall_readAccelerometer() {
+    uint8_t buffer[6];
+    masterXfer.slaveAddress = 0x1D;
+    masterXfer.direction = kI2C_Read;
+    masterXfer.subaddress = 0x01;
+    masterXfer.subaddressSize = 1;
+    masterXfer.data = buffer;
+    masterXfer.dataSize = 6;
+    masterXfer.flags = kI2C_TransferDefaultFlag;
+
+    I2C_MasterTransferNonBlocking(I2C0, &g_m_handle, &masterXfer);
+    while (!g_MasterCompletionFlag)
+    {
+    }
+    g_MasterCompletionFlag = false;
+
+    accelerometer[0] = buffer[0] << 8 | buffer[1];
+    accelerometer[1] = buffer[2] << 8 | buffer[3];
+    accelerometer[2] = buffer[4] << 8 | buffer[5];
+}
+
 void freeFall_modulesInit() {
     freeFall_I2Cinit();         //I2C module initialization
+    freeFall_IMUinit();         //accelerometer enabling
     freeFall_gpioLedsInit();    //PIT module initialization
     freeFall_pitInit();         //LED GPIO module initialization
 }
 
 void freeFall_fallDetection() {
-
+    freeFall_readAccelerometer();
+    if (FALSE == gKinetisFalling)   //if the Kinetis isn't Falling
+    {
+        GPIO_SetPinsOutput(GPIOB, 1 << 22);
+    }
 }
+

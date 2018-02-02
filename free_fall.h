@@ -8,7 +8,7 @@
 #ifndef FREE_FALL_H_
 #define FREE_FALL_H_
 
-void freeFall_I2Cinit();
+void freeFall_modulesInit();
 void freeFall_fallDetection();
 
 #endif /* FREE_FALL_H_ */

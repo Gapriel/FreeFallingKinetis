@@ -18,13 +18,22 @@ static i2c_master_transfer_t masterXfer;
 static volatile bool g_MasterCompletionFlag = false;
 static i2c_master_handle_t g_m_handle;
 static const uint8_t gFrecuency = 8;    //period corresponding to 4Hz
-static const uint8_t gKinetisFalling = FALSE; //variable used to know if the Kinetis is falling
+static uint8_t gKinetisFalling = FALSE; //variable used to know if the Kinetis is falling
 static int16_t accelerometer[3]; //where the accelerometer will receive its readings
+static bool FreeFall = FALSE;
+#define SENSISITIVITY_2G 0.000244
+#define A_FFMT_SRC 0x16
+#define FREE_FALL_PIN_SRC 7
+#define FREE_FALL_PIN_MASK (1 << FREE_FALL_PIN_SRC)
 
+float x_accelerometer ;
+float y_accelerometer ;
+float z_accelerometer ;
+
+#define DEBUG 0
 
 
 static void formato_IMU();
-
 
 void PIT0_IRQHandler() {
     PIT_ClearStatusFlags(PIT, kPIT_Chnl_0, kPIT_TimerFlag); //pit0 interrupt flag cleared
@@ -99,6 +108,7 @@ static void freeFall_gpioLedsInit() {
     GPIO_PinInit(GPIOB, 22, &led_config_gpio);
 }
 
+
 static void freeFall_IMUinit() {
     uint8_t data_buffer = 0x01;
     masterXfer.slaveAddress = 0x1D;
@@ -114,9 +124,12 @@ static void freeFall_IMUinit() {
     {
     }
     g_MasterCompletionFlag = false;
+
+
 }
 
 static void freeFall_readAccelerometer() {
+#if DEBUG
     uint8_t buffer[6];
     masterXfer.slaveAddress = 0x1D;
     masterXfer.direction = kI2C_Read;
@@ -135,6 +148,23 @@ static void freeFall_readAccelerometer() {
     accelerometer[0] = buffer[0] << 8 | buffer[1];
     accelerometer[1] = buffer[2] << 8 | buffer[3];
     accelerometer[2] = buffer[4] << 8 | buffer[5];
+#else
+    uint8_t data_buffer;
+    masterXfer.slaveAddress = 0x1D;
+    masterXfer.direction = kI2C_Read;
+    masterXfer.subaddress = A_FFMT_SRC;
+    masterXfer.subaddressSize = 1;
+    masterXfer.data = &data_buffer;
+    masterXfer.dataSize =1;
+    masterXfer.flags = kI2C_TransferDefaultFlag;
+
+    I2C_MasterTransferNonBlocking(I2C0, &g_m_handle, &masterXfer);
+    while (!g_MasterCompletionFlag)
+    {
+    }
+    g_MasterCompletionFlag = false;
+    FreeFall = (bool) ((data_buffer & FREE_FALL_PIN_MASK) >> FREE_FALL_PIN_SRC );
+#endif
 }
 
 void freeFall_modulesInit() {
@@ -146,21 +176,21 @@ void freeFall_modulesInit() {
 
 
 
-float x_accelerometer ;
-float y_accelerometer ;
-float z_accelerometer ;
-
-#define DEBUG 0
-
 void freeFall_fallDetection() {
     freeFall_readAccelerometer();
     formato_IMU();
-
+    if(TRUE ==  FreeFall){
+    	gKinetisFalling = TRUE;
+    }else
+    {
+    	gKinetisFalling = FALSE;
+    	GPIO_WritePinOutput(GPIOB, 1<<22, 1);
+    }
 #if DEBUG
     printf("Hola aaa  %f \n", y_accelerometer);
 #endif
 }
-#define SENSISITIVITY_2G 0.000244
+
 
 static void formato_IMU(){
 
@@ -177,7 +207,4 @@ static void formato_IMU(){
 	x_accelerometer /=4;
 	y_accelerometer /=4;
 	z_accelerometer /=4;
-
-
-
 }

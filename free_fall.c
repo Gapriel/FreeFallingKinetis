@@ -12,6 +12,7 @@
 #include "fsl_gpio.h"
 #include "fsl_pit.h"
 #include "DataTypeDefinitions.h"
+#include <stdio.h>
 
 static i2c_master_transfer_t masterXfer;
 static volatile bool g_MasterCompletionFlag = false;
@@ -19,6 +20,11 @@ static i2c_master_handle_t g_m_handle;
 static const uint8_t gFrecuency = 8;    //period corresponding to 4Hz
 static const uint8_t gKinetisFalling = FALSE; //variable used to know if the Kinetis is falling
 static int16_t accelerometer[3]; //where the accelerometer will receive its readings
+
+
+
+static void formato_IMU();
+
 
 void PIT0_IRQHandler() {
     PIT_ClearStatusFlags(PIT, kPIT_Chnl_0, kPIT_TimerFlag); //pit0 interrupt flag cleared
@@ -138,8 +144,40 @@ void freeFall_modulesInit() {
     freeFall_pitInit();         //LED GPIO module initialization
 }
 
+
+
+float x_accelerometer ;
+float y_accelerometer ;
+float z_accelerometer ;
+
+#define DEBUG 0
+
 void freeFall_fallDetection() {
     freeFall_readAccelerometer();
+    formato_IMU();
+
+#if DEBUG
+    printf("Hola aaa  %f \n", y_accelerometer);
+#endif
+}
+#define SENSISITIVITY_2G 0.000244
+
+static void formato_IMU(){
+
+	/*
+	 * Se ajusta el el valor tomado de acuerdo a la sensibilidad configurada.
+	 */
+	x_accelerometer = accelerometer[0] * SENSISITIVITY_2G;
+	y_accelerometer = accelerometer[1] * SENSISITIVITY_2G;
+	z_accelerometer = accelerometer[2] * SENSISITIVITY_2G;
+
+	/*
+	 * Ajuste de 2 bits sobrantes debido al acomodo de la parte baja de la información.
+	 */
+	x_accelerometer /=4;
+	y_accelerometer /=4;
+	z_accelerometer /=4;
+
+
 
 }
-

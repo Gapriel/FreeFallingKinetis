@@ -39,7 +39,9 @@
 
 int main(void) {
 
-    freeFall_modulesInit();	//I2C module initialization
+
+
+	freeFall_modulesInit();	//I2C module initialization
 
 	while (1) {
 		freeFall_fallDetection();	//fall detection

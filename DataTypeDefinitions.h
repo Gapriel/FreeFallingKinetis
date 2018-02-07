@@ -12,4 +12,7 @@ typedef enum {
     FALSE, TRUE
 } boolean_type_t;
 
+typedef enum {
+    LED_ON,LED_OFF
+};
 #endif /* DATATYPEDEFINITIONS_H_ */

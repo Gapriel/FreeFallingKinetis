@@ -14,6 +14,35 @@
 #include "DataTypeDefinitions.h"
 
 #define SENSISITIVITY_2G 0.000244   //+- 2g acceleration sensitivity value as seen in table 61 from IMU datasheet
+#define I2C_IMU_BAUDRATE 100000
+#define I2C0_SCL_PIN 24
+#define I2C0_SDA_PIN 25
+#define I2C0_SCL_PORT PORTE
+#define I2C0_SDA_PORT PORTE
+#define RED_LED_PIN 22
+#define RED_LED_GPIO GPIOB
+#define IMU_VALUE_AROUND_FREE_FALL 0.2
+#define IMU_VALUE_SQUARED (IMU_VALUE_AROUND_FREE_FALL * IMU_VALUE_AROUND_FREE_FALL)
+#define RED_LED_MASK (1<<RED_LED_PIN)
+
+#define IMU_SLAVE_ADDRESS 0x1D
+#define IMU_CONFIG_REGISTER_ADDRESS 0x2A
+#define IMU_CONFIG_REGISTER_SIZE 1
+#define IMU_REGISTER_DATA_SIZE 1
+
+#define BYTES_TO_ALL_AXES 6
+#define IMU_ACCELEROMETER_X_HIGH_REGISTER 0x01
+#define ACCELEROMETER_X_DATA 0
+#define ACCELEROMETER_Y_DATA 1
+#define ACCELEROMETER_Z_DATA 2
+#define ACCELEROMETER_X_HIGH 0
+#define ACCELEROMETER_X_LOW 1
+#define ACCELEROMETER_Y_HIGH 2
+#define ACCELEROMETER_Y_LOW 3
+#define ACCELEROMETER_Z_HIGH 4
+#define ACCELEROMETER_Z_LOW 5
+#define ACCELEROMETER_REGISTER_BITS_SIZE 8
+#define ACCELEROMETER_2_BIT_ADJUSTMENT 4
 
 static i2c_master_transfer_t masterXfer; //I2C_0 master transfer structure declaration
 static bool g_MasterCompletionFlag = false; //I2C_0 master transference completion flag
@@ -30,7 +59,7 @@ void PIT0_IRQHandler() {
     PIT_ClearStatusFlags(PIT, kPIT_Chnl_0, kPIT_TimerFlag); //pit0 interrupt flag cleared
     if (TRUE == gKinetisFalling)    //if the Kinetis if falling
     {
-        GPIO_TogglePinsOutput(GPIOB, 1 << 22);  //toggles RED LED state
+        GPIO_TogglePinsOutput(RED_LED_GPIO, RED_LED_MASK); //toggles RED LED state
     }
 }
 
@@ -54,18 +83,18 @@ static void freeFall_I2Cinit() {
     port_pin_config_t config_i2c = { kPORT_PullUp, kPORT_SlowSlewRate,
         kPORT_PassiveFilterDisable, kPORT_OpenDrainDisable,
         kPORT_LowDriveStrength, kPORT_MuxAlt5, kPORT_UnlockRegister, };
-    PORT_SetPinConfig(PORTE, 24, &config_i2c);	//I2C_0 SCL pin configuration
-    PORT_SetPinConfig(PORTE, 25, &config_i2c);	//I2C_0 DSA pin configuration
+    PORT_SetPinConfig(I2C0_SCL_PORT, I2C0_SCL_PIN, &config_i2c);	//I2C_0 SCL pin configuration
+    PORT_SetPinConfig(I2C0_SDA_PORT, I2C0_SDA_PIN, &config_i2c);//I2C_0 DSA pin configuration
 
     //I2C_0 master configuration
     i2c_master_config_t masterConfig;
     I2C_MasterGetDefaultConfig(&masterConfig); //I2C_0 master default config. obtanined
-    masterConfig.baudRate_Bps = 100000;
+    masterConfig.baudRate_Bps = I2C_IMU_BAUDRATE;
     I2C_MasterInit(I2C0, &masterConfig, CLOCK_GetFreq(kCLOCK_BusClk));
 
     //I2C_0 master handler creation
     I2C_MasterTransferCreateHandle(I2C0, &g_m_handle, i2c_master_callback,
-    NULL);
+                                   NULL);
 }
 
 //this function initializes the PIT module
@@ -107,12 +136,12 @@ static void freeFall_gpioLedsInit() {
 static void freeFall_IMUinit() {
     //I2C_0 data block definition
     uint8_t data_buffer = 0x01;
-    masterXfer.slaveAddress = 0x1D;
+    masterXfer.slaveAddress = IMU_SLAVE_ADDRESS;
     masterXfer.direction = kI2C_Write;
-    masterXfer.subaddress = 0x2A;
-    masterXfer.subaddressSize = 1;
+    masterXfer.subaddress = IMU_CONFIG_REGISTER_ADDRESS;
+    masterXfer.subaddressSize = IMU_CONFIG_REGISTER_SIZE;
     masterXfer.data = &data_buffer;
-    masterXfer.dataSize = 1;
+    masterXfer.dataSize = IMU_REGISTER_DATA_SIZE;
     masterXfer.flags = kI2C_TransferDefaultFlag;
 
     //I2C_0 data block transmission
@@ -125,15 +154,15 @@ static void freeFall_IMUinit() {
 
 //this function reads the IMU accelerometer (x,y,z LS and MS registers)
 static void freeFall_readAccelerometer() {
-    uint8_t buffer[6];  //here the read register will hold the values obtained subsequently
+    uint8_t buffer[BYTES_TO_ALL_AXES]; //here the read register will hold the values obtained subsequently
 
     //I2C_0 data block definition
-    masterXfer.slaveAddress = 0x1D;
+    masterXfer.slaveAddress = IMU_SLAVE_ADDRESS;
     masterXfer.direction = kI2C_Read;
-    masterXfer.subaddress = 0x01;
-    masterXfer.subaddressSize = 1;
+    masterXfer.subaddress = IMU_ACCELEROMETER_X_HIGH_REGISTER;
+    masterXfer.subaddressSize = IMU_REGISTER_DATA_SIZE;
     masterXfer.data = buffer;
-    masterXfer.dataSize = 6;
+    masterXfer.dataSize = BYTES_TO_ALL_AXES;
     masterXfer.flags = kI2C_TransferDefaultFlag;
 
     //I2C_0 data block transmission
@@ -144,9 +173,12 @@ static void freeFall_readAccelerometer() {
     g_MasterCompletionFlag = false;
 
     //MSB and LSB bytes joined together to form the true axis reading
-    accelerometer[0] = buffer[0] << 8 | buffer[1];  //X axis
-    accelerometer[1] = buffer[2] << 8 | buffer[3];  //Y axis
-    accelerometer[2] = buffer[4] << 8 | buffer[5];  //Z axis
+    accelerometer[ACCELEROMETER_X_DATA] = buffer[ACCELEROMETER_X_HIGH]
+            << ACCELEROMETER_REGISTER_BITS_SIZE | buffer[ACCELEROMETER_X_LOW]; //X axis
+    accelerometer[ACCELEROMETER_Y_DATA] = buffer[ACCELEROMETER_Y_HIGH]
+            << ACCELEROMETER_REGISTER_BITS_SIZE | buffer[ACCELEROMETER_Y_LOW]; //Y axis
+    accelerometer[ACCELEROMETER_Z_DATA] = buffer[ACCELEROMETER_Z_HIGH]
+            << ACCELEROMETER_REGISTER_BITS_SIZE | buffer[ACCELEROMETER_Z_LOW]; //Z axis
 }
 
 //this function converts the read value to an actual functional value
@@ -155,17 +187,17 @@ static void IMU_format() {
     /*
      * The value is adjusted according to the configured sensitivity
      */
-    x_accelerometer = accelerometer[0] * SENSISITIVITY_2G;
-    y_accelerometer = accelerometer[1] * SENSISITIVITY_2G;
-    z_accelerometer = accelerometer[2] * SENSISITIVITY_2G;
+    x_accelerometer = accelerometer[ACCELEROMETER_X_DATA] * SENSISITIVITY_2G;
+    y_accelerometer = accelerometer[ACCELEROMETER_Y_DATA] * SENSISITIVITY_2G;
+    z_accelerometer = accelerometer[ACCELEROMETER_Z_DATA] * SENSISITIVITY_2G;
 
     /*
      * 2 exceeding bits adjustment because of miss-alinment
      * Ajuste de 2 bits sobrantes debido al acomodo de la parte baja de la información.
      */
-    x_accelerometer /= 4;
-    y_accelerometer /= 4;
-    z_accelerometer /= 4;
+    x_accelerometer /= ACCELEROMETER_2_BIT_ADJUSTMENT;
+    y_accelerometer /= ACCELEROMETER_2_BIT_ADJUSTMENT;
+    z_accelerometer /= ACCELEROMETER_2_BIT_ADJUSTMENT;
 
 }
 
@@ -185,20 +217,21 @@ void freeFall_fallDetection() {
     IMU_format();
 
     //sum of axis magnitudes in order to obtain the vector magnitude
-    float magnitude = x_accelerometer * x_accelerometer
+    float magnitude_squared = x_accelerometer * x_accelerometer
             + y_accelerometer * y_accelerometer
             + z_accelerometer * z_accelerometer;
 
     //if the accelerations approximates zero,
-    if ((0.04) > magnitude)
+    //
+    if ((IMU_VALUE_SQUARED) > magnitude_squared)
     {
         //then the LED starts to blink
-        GPIO_WritePinOutput(GPIOB, 22, 0);
+        GPIO_WritePinOutput(RED_LED_GPIO, RED_LED_PIN, LED_ON);
         gKinetisFalling = TRUE;
     } else
     {
         //if it's not falling, the LED stops blinking
-        GPIO_WritePinOutput(GPIOB, 22, 1);
+        GPIO_WritePinOutput(RED_LED_GPIO, RED_LED_PIN, LED_OFF);
         gKinetisFalling = FALSE;
     }
 }

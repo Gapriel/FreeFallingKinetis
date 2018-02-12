@@ -12,18 +12,19 @@
 /********************************************************************************************/
 /********************************************************************************************/
 /*!
- \brief  This function initialize the I2C, GPIO LEDS , PIT and IMU
- \param[in]  void
- \return void
+     \brief  This function initialize the I2C, GPIO LEDS , PIT and IMU
+     \param[in]  void
+     \return void
  */
 void freeFall_modulesInit();
+
 
 /********************************************************************************************/
 /********************************************************************************************/
 /********************************************************************************************/
 /*!
- \brief  This function toggles the red led if a free fall it's detected.
- \return void
+     \brief  This function toggles the red led if a free fall it's detected.
+     \return void
  */
 void freeFall_fallDetection();
 
